@@ -56,17 +56,19 @@ type DevtoolsPluginAPI = Parameters<
   Parameters<typeof setupDevtoolsPlugin>[1]
 >[0]
 
-// The devtools API of each application. `setupDevtoolsPlugin` queues its setup
-// callback until the devtools client connects, which may never happen, so the
-// promise is cached right away: every store awaits this exact registration
-// instead of adding a new one.
-const registeredApps = new WeakMap<App, Promise<DevtoolsPluginAPI>>()
+// The pending devtools API of each Pinia instance. `setupDevtoolsPlugin`
+// queues its setup callback until the devtools client connects, which may
+// never happen, so the promise is cached right away: every store awaits this
+// exact registration instead of adding a new one. The cache is keyed by the
+// Pinia instance because the setup callback closes over it: two Pinia
+// instances installed on the same application must not share an API.
+const registeredPinias = new WeakMap<Pinia, Promise<DevtoolsPluginAPI>>()
 
 /**
- * Register the Pinia devtools plugin, once per application, and resolve with
- * its API once the devtools client connects. Registering at install time,
- * with the settings, lets devtools read them without waiting for the first
- * store to be created (see #2818).
+ * Register the Pinia devtools plugin, once per Pinia instance, and resolve
+ * with its API once the devtools client connects. Registering at install
+ * time, with the settings, lets devtools read them without waiting for the
+ * first store to be created (see #2818).
  *
  * @param app - Vue application
  * @param pinia - pinia instance
@@ -75,14 +77,14 @@ export function registerPiniaDevtools(
   app: App,
   pinia: Pinia
 ): Promise<DevtoolsPluginAPI> {
-  const cached = registeredApps.get(app)
+  const cached = registeredPinias.get(pinia)
   if (cached) return cached
 
   let resolveApi!: (api: DevtoolsPluginAPI) => void
   const apiPromise = new Promise<DevtoolsPluginAPI>((resolve) => {
     resolveApi = resolve
   })
-  registeredApps.set(app, apiPromise)
+  registeredPinias.set(pinia, apiPromise)
 
   setupDevtoolsPlugin(
     {
@@ -624,7 +626,9 @@ export function devtoolsPlugin<
     app,
     // FIXME: is there a way to allow the assignment from Store<Id, S, G, A> to StoreGeneric?
     store as StoreGeneric
-  )
+  ).catch(() => {
+    // devtools failures must never break the application
+  })
 }
 
 declare global {

@@ -40,6 +40,21 @@ export function connectDevtoolsClient(api: any): void {
   registrations.forEach((r) => r.setupFn(api))
 }
 
+/**
+ * Same as `connectDevtoolsClient`, but gives each registration its own API
+ * (built by `makeApi`), so tests can assert which registration a store's
+ * events flow through.
+ */
+export function connectDevtoolsClientPerRegistration(
+  makeApi: () => any
+): any[] {
+  return registrations.map((r) => {
+    const api = makeApi()
+    r.setupFn(api)
+    return api
+  })
+}
+
 export function createFakeDevtoolsApi() {
   return {
     now: () => 123,

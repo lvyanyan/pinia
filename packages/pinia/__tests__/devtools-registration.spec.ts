@@ -4,6 +4,7 @@ import { createPinia, defineStore } from '../src'
 import { devtoolsPlugin, registerPiniaDevtools } from '../src/devtools'
 import {
   connectDevtoolsClient,
+  connectDevtoolsClientPerRegistration,
   createFakeDevtoolsApi,
   getDevtoolsRegistrations,
   resetDevtoolsRegistrations,
@@ -96,5 +97,39 @@ describe('devtools registration', () => {
       })
     )
     expect(api.sendInspectorState).toHaveBeenCalledWith('pinia')
+  })
+
+  it('registers one plugin per Pinia instance, even on the same application', async () => {
+    const { app, pinia } = setupApp()
+
+    // install-time registrations (the compile-time devtools flag is off in
+    // tests, so registerPiniaDevtools is called directly, as install would)
+    registerPiniaDevtools(app, pinia)
+
+    // a second Pinia instance installed on the same application
+    const pinia2 = createPinia()
+    pinia2.use(devtoolsPlugin)
+    app.use(pinia2)
+    registerPiniaDevtools(app, pinia2)
+    await flushPromises()
+
+    expect(getDevtoolsRegistrations()).toHaveLength(2)
+
+    const store1 = useCounterStore(pinia)
+    const store2 = useCounterStore(pinia2)
+    await flushPromises()
+
+    // each registration resolves with its own API and receives only its own
+    // instance's store events
+    const apis = connectDevtoolsClientPerRegistration(createFakeDevtoolsApi)
+    await flushPromises()
+    expect(apis).toHaveLength(2)
+
+    store1.increment()
+    expect(apis[0].addTimelineEvent).toHaveBeenCalled()
+    expect(apis[1].addTimelineEvent).not.toHaveBeenCalled()
+
+    store2.increment()
+    expect(apis[1].addTimelineEvent).toHaveBeenCalled()
   })
 })
